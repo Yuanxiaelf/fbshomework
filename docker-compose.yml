@@ -1,44 +1,79 @@
 version: '3.8'
 
 services:
-  mysql:
+  mysql-master:
     image: mysql:8.0
-    container_name: fbshomework-mysql
+    container_name: mysql-master
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: fbshomework
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-master-data:/var/lib/mysql
+      - ./mysql/master/conf:/etc/mysql/conf.d
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - app-network
+
+  mysql-slave:
+    image: mysql:8.0
+    container_name: mysql-slave
     environment:
       MYSQL_ROOT_PASSWORD: 123456
       MYSQL_DATABASE: fbshomework
     ports:
       - "3307:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql-slave-data:/var/lib/mysql
+      - ./mysql/slave/conf:/etc/mysql/conf.d
+    networks:
+      - app-network
+    depends_on:
+      - mysql-master
+
+  redis:
+    image: redis:7.2
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - app-network
 
   app1:
     build: .
-    container_name: fbshomework-app1
+    container_name: app1
     ports:
       - "8081:8080"
-    depends_on:
-      - mysql
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/fbshomework?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: 123456
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - mysql-master
+      - mysql-slave
+      - redis
+    networks:
+      - app-network
 
   app2:
     build: .
-    container_name: fbshomework-app2
+    container_name: app2
     ports:
       - "8082:8080"
-    depends_on:
-      - mysql
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/fbshomework?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: 123456
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - mysql-master
+      - mysql-slave
+      - redis
+    networks:
+      - app-network
 
   nginx:
     image: nginx:latest
-    container_name: fbshomework-nginx
+    container_name: nginx
     ports:
       - "8088:80"
     volumes:
@@ -46,6 +81,14 @@ services:
     depends_on:
       - app1
       - app2
+    networks:
+      - app-network
 
 volumes:
-  mysql_data:
+  mysql-master-data:
+  mysql-slave-data:
+  redis-data:
+
+networks:
+  app-network:
+    driver: bridge
